@@ -1,0 +1,18 @@
+# keep-awake-agents config
+# Sourced by the daemon on startup. After editing, restart:
+#   launchctl kickstart -k gui/$(id -u)/com.keepawake.agents
+
+# How often (seconds) to check for running agents. Default: 15.
+POLL_INTERVAL=15
+
+# Extra pgrep -f patterns. The daemon will also keep the Mac awake while
+# any process matching one of these is running. ERE syntax, one per line.
+# Examples:
+#   "long-render-job"
+#   "/usr/local/bin/my-trainer"
+#   "ffmpeg .*-i .*\.mov"
+EXTRA_PATTERNS=()
+
+# Set to 1 to also prevent the display from sleeping (caffeinate -d).
+# Default 0 = screen still sleeps / lid still dims, but the system stays awake.
+PREVENT_DISPLAY_SLEEP=0
