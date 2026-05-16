@@ -10,6 +10,8 @@
 #   keep-awake-ctl.sh toggle
 #   keep-awake-ctl.sh set-poll <seconds>
 #   keep-awake-ctl.sh set-display <0|1>
+#   keep-awake-ctl.sh set-cpu-threshold <percent|0>
+#   keep-awake-ctl.sh set-cpu-duration <polls>
 
 set -e
 
@@ -57,8 +59,16 @@ case "${1:-}" in
     set_var PREVENT_DISPLAY_SLEEP "$2"
     restart_daemon
     ;;
+  set-cpu-threshold)
+    set_var CPU_IDLE_THRESHOLD "$2"
+    restart_daemon
+    ;;
+  set-cpu-duration)
+    set_var CPU_IDLE_DURATION "$2"
+    restart_daemon
+    ;;
   *)
-    echo "usage: $0 {pause|resume|toggle|set-poll N|set-display 0|1}" >&2
+    echo "usage: $0 {pause|resume|toggle|set-poll N|set-display 0|1|set-cpu-threshold N|set-cpu-duration N}" >&2
     exit 1
     ;;
 esac

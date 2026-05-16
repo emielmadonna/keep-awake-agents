@@ -16,3 +16,14 @@ EXTRA_PATTERNS=()
 # Set to 1 to also prevent the display from sleeping (caffeinate -d).
 # Default 0 = screen still sleeps / lid still dims, but the system stays awake.
 PREVENT_DISPLAY_SLEEP=0
+
+# CPU-idle threshold (percent). When the combined CPU% of all matched processes
+# stays below this value for CPU_IDLE_DURATION consecutive polls, the wakelock
+# is released and the Mac can sleep — even though the agent processes are still
+# running. This covers the common case of Claude/Codex sitting at a prompt
+# waiting for user input. Set to 0 to disable (always keep awake).
+CPU_IDLE_THRESHOLD=5
+
+# Number of consecutive polls below CPU_IDLE_THRESHOLD before going idle.
+# At the default 15s poll interval: 3 polls = ~45 seconds of inactivity.
+CPU_IDLE_DURATION=3

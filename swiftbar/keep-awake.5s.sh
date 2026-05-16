@@ -16,14 +16,19 @@ CTL="$HOME/bin/keep-awake-ctl.sh"
 # Current config (defaults if file/keys missing).
 poll=$(awk -F= '/^POLL_INTERVAL=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
 display=$(awk -F= '/^PREVENT_DISPLAY_SLEEP=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
-[ -z "$poll" ] && poll=15
+cpu_thr=$(awk -F= '/^CPU_IDLE_THRESHOLD=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
+cpu_dur=$(awk -F= '/^CPU_IDLE_DURATION=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
+[ -z "$poll" ]    && poll=15
 [ -z "$display" ] && display=0
+[ -z "$cpu_thr" ] && cpu_thr=5
+[ -z "$cpu_dur" ] && cpu_dur=3
 
 # Current state + per-app session counts.
-status=unknown; duration=""; claude_n=0; codex_n=0; other_n=0
+status=unknown; duration=""; claude_n=0; codex_n=0; other_n=0; cpu_val=""
 if [ -f "$STATE_FILE" ]; then
   status=$(awk -F= '$1=="status"{print $2; exit}' "$STATE_FILE")
   since_raw=$(awk -F= '$1=="since"{sub(/^since=/,"",$0); print; exit}' "$STATE_FILE")
+  cpu_val=$(awk -F= '$1=="cpu"{print $2; exit}' "$STATE_FILE")
   # Compute elapsed time as "12m", "1h 23m", "2d 5h".
   since_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S" "$since_raw" "+%s" 2>/dev/null)
   if [ -n "$since_epoch" ]; then
@@ -59,7 +64,19 @@ case "$status" in
     [ "$claude_n" -gt 0 ] && echo "Claude Code: $claude_n | color=gray"
     [ "$codex_n"  -gt 0 ] && echo "Codex: $codex_n | color=gray"
     [ "$other_n"  -gt 0 ] && echo "Other: $other_n | color=gray"
+    [ -n "$cpu_val" ] && echo "CPU: ${cpu_val}% | color=gray"
     [ -n "$duration" ] && echo "Awake for $duration | color=gray"
+    echo "Pause | shell=$CTL param1=pause terminal=false refresh=true"
+    ;;
+  cpu-idle)
+    echo ":cup.and.saucer:"
+    echo "---"
+    echo "$total $agent_word idle — Mac can sleep | size=13"
+    [ "$claude_n" -gt 0 ] && echo "Claude Code: $claude_n | color=gray"
+    [ "$codex_n"  -gt 0 ] && echo "Codex: $codex_n | color=gray"
+    [ "$other_n"  -gt 0 ] && echo "Other: $other_n | color=gray"
+    [ -n "$cpu_val" ] && echo "CPU: ${cpu_val}% (below ${cpu_thr}% threshold) | color=gray"
+    [ -n "$duration" ] && echo "Idle for $duration | color=gray"
     echo "Pause | shell=$CTL param1=pause terminal=false refresh=true"
     ;;
   paused)
@@ -99,4 +116,30 @@ else
   echo "Block display sleep: Off"
   echo "-- On  | shell=$CTL param1=set-display param2=1 terminal=false refresh=true"
   echo "-- Off | checked=true shell=$CTL param1=set-display param2=0 terminal=false refresh=true"
+fi
+
+# CPU-idle threshold — 0 = disabled.
+cpu_thr_label="${cpu_thr}%"; [ "$cpu_thr" = "0" ] && cpu_thr_label="Off"
+echo "CPU-idle threshold: ${cpu_thr_label}"
+for v in 0 3 5 10 20; do
+  label="${v}%"; [ "$v" = "0" ] && label="Off (always awake)"
+  if [ "$cpu_thr" = "$v" ]; then
+    echo "-- $label | checked=true shell=$CTL param1=set-cpu-threshold param2=${v} terminal=false refresh=true"
+  else
+    echo "-- $label | shell=$CTL param1=set-cpu-threshold param2=${v} terminal=false refresh=true"
+  fi
+done
+
+# CPU-idle duration (only shown when threshold is active).
+if [ "$cpu_thr" != "0" ]; then
+  delay_secs=$((cpu_dur * poll))
+  echo "CPU-idle delay: ${cpu_dur} polls (~${delay_secs}s)"
+  for v in 1 2 3 5; do
+    secs=$((v * poll))
+    if [ "$cpu_dur" = "$v" ]; then
+      echo "-- ${v} polls (~${secs}s) | checked=true shell=$CTL param1=set-cpu-duration param2=${v} terminal=false refresh=true"
+    else
+      echo "-- ${v} polls (~${secs}s) | shell=$CTL param1=set-cpu-duration param2=${v} terminal=false refresh=true"
+    fi
+  done
 fi

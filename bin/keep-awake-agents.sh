@@ -24,6 +24,11 @@ CONFIG_FILE="$HOME/.config/keep-awake-agents/config"
 POLL_INTERVAL=15
 PREVENT_DISPLAY_SLEEP=0
 EXTRA_PATTERNS=()
+# CPU-idle threshold: release the wakelock when the combined CPU% of all matched
+# processes stays below this value for CPU_IDLE_DURATION consecutive polls.
+# Set to 0 to disable (always keep awake while processes are running).
+CPU_IDLE_THRESHOLD=5
+CPU_IDLE_DURATION=3
 
 # shellcheck source=/dev/null
 [ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
@@ -77,12 +82,26 @@ get_matched_processes() {
   done <<< "$pids"
 }
 
+# Returns the sum of CPU% for all matched processes (one decimal place).
+get_matched_cpu() {
+  local process_lines=$1
+  [ -z "$process_lines" ] && { echo "0.0"; return; }
+  local pids pid_list total_cpu
+  pids=$(printf '%s\n' "$process_lines" | awk '{print $1}' | tr '\n' ',' | sed 's/,$//')
+  [ -z "$pids" ] && { echo "0.0"; return; }
+  total_cpu=$(ps -o %cpu= -p "$pids" 2>/dev/null \
+    | awk '{s+=$1} END{printf "%.1f", s+0}')
+  echo "${total_cpu:-0.0}"
+}
+
 write_state() {
-  # $1 = status (active|idle|paused); $2 = since timestamp; stdin = process lines
-  local status=$1 since=$2
+  # $1 = status (active|cpu-idle|idle|paused); $2 = since timestamp
+  # $3 = optional cpu value; stdin = process lines
+  local status=$1 since=$2 cpu=${3:-}
   {
     echo "status=$status"
     echo "since=$since"
+    [ -n "$cpu" ] && echo "cpu=$cpu"
     while IFS= read -r line; do
       [ -n "$line" ] && echo "process=$line"
     done
@@ -121,13 +140,15 @@ cleanup() {
 }
 trap cleanup INT TERM
 
-log "started (pid $$, poll ${POLL_INTERVAL}s, prevent_display=${PREVENT_DISPLAY_SLEEP}, extra_patterns=${#EXTRA_PATTERNS[@]})"
+log "started (pid $$, poll ${POLL_INTERVAL}s, prevent_display=${PREVENT_DISPLAY_SLEEP}, cpu_threshold=${CPU_IDLE_THRESHOLD}%, cpu_duration=${CPU_IDLE_DURATION}, extra_patterns=${#EXTRA_PATTERNS[@]})"
 prev_status=""
 since_ts=""
+cpu_idle_count=0
 
 while true; do
   if [ -f "$PAUSE_FLAG" ]; then
     stop_caffeinate
+    cpu_idle_count=0
     if [ "$prev_status" != "paused" ]; then
       since_ts=$(now_ts)
       log "paused (flag file present)"
@@ -141,18 +162,46 @@ while true; do
   matches=$(get_matched_processes || true)
 
   if [ -n "$matches" ]; then
-    start_caffeinate
-    if [ "$prev_status" != "active" ]; then
-      since_ts=$(now_ts)
-      log "ACTIVE — agents detected:"
-      while IFS= read -r line; do
-        [ -n "$line" ] && log "  $line"
-      done <<< "$matches"
-      prev_status=active
+    # --- CPU-idle check ---
+    if [ "${CPU_IDLE_THRESHOLD:-0}" != "0" ]; then
+      total_cpu=$(get_matched_cpu "$matches")
+      is_below=$(awk -v cpu="$total_cpu" -v thr="${CPU_IDLE_THRESHOLD}" \
+                   'BEGIN{print (cpu+0 < thr+0) ? "1" : "0"}')
+      if [ "$is_below" = "1" ]; then
+        cpu_idle_count=$((cpu_idle_count + 1))
+      else
+        cpu_idle_count=0
+      fi
+    else
+      total_cpu=""
+      cpu_idle_count=0
     fi
-    printf '%s\n' "$matches" | write_state active "$since_ts"
+
+    if [ "${CPU_IDLE_THRESHOLD:-0}" != "0" ] \
+       && [ "$cpu_idle_count" -ge "${CPU_IDLE_DURATION:-3}" ]; then
+      # Processes are running but have been idle below the CPU threshold.
+      stop_caffeinate
+      if [ "$prev_status" != "cpu-idle" ]; then
+        since_ts=$(now_ts)
+        log "CPU-IDLE — agents below ${CPU_IDLE_THRESHOLD}% × ${CPU_IDLE_DURATION} polls (cpu=${total_cpu}%)"
+        prev_status=cpu-idle
+      fi
+      printf '%s\n' "$matches" | write_state cpu-idle "$since_ts" "$total_cpu"
+    else
+      start_caffeinate
+      if [ "$prev_status" != "active" ]; then
+        since_ts=$(now_ts)
+        log "ACTIVE — agents detected:"
+        while IFS= read -r line; do
+          [ -n "$line" ] && log "  $line"
+        done <<< "$matches"
+        prev_status=active
+      fi
+      printf '%s\n' "$matches" | write_state active "$since_ts" "$total_cpu"
+    fi
   else
     stop_caffeinate
+    cpu_idle_count=0
     if [ "$prev_status" != "idle" ]; then
       since_ts=$(now_ts)
       log "idle — no agents, system may sleep"
