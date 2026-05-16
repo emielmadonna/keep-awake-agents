@@ -40,30 +40,32 @@ if [ -f "$STATE_FILE" ]; then
 fi
 
 # Top icon + status header + primary toggle.
+total=$((claude_n + codex_n + other_n))
+agent_word="agents"; [ "$total" = "1" ] && agent_word="agent"
+
 case "$status" in
   active)
     echo ":cup.and.saucer.fill:"
     echo "---"
-    echo "Awake — since $since | color=gray"
-    [ "$claude_n" -gt 0 ] && echo "Claude Code · $claude_n | color=gray"
-    [ "$codex_n"  -gt 0 ] && echo "Codex · $codex_n | color=gray"
-    [ "$other_n"  -gt 0 ] && echo "Other · $other_n | color=gray"
+    echo "$total $agent_word keeping Mac awake | size=13"
+    [ "$claude_n" -gt 0 ] && echo "Claude Code: $claude_n | color=gray"
+    [ "$codex_n"  -gt 0 ] && echo "Codex: $codex_n | color=gray"
+    [ "$other_n"  -gt 0 ] && echo "Other: $other_n | color=gray"
+    echo "Since $since | color=gray"
     echo "Pause | shell=$CTL param1=pause terminal=false refresh=true"
     ;;
   paused)
     echo ":pause.circle:"
     echo "---"
-    echo "Paused — since $since | color=gray"
+    echo "Paused — Mac can sleep | size=13"
+    echo "Since $since | color=gray"
     echo "Resume | shell=$CTL param1=resume terminal=false refresh=true"
     ;;
   *)
     echo ":moon.zzz:"
     echo "---"
-    if [ -n "$since" ]; then
-      echo "Idle — since $since | color=gray"
-    else
-      echo "Idle | color=gray"
-    fi
+    echo "Idle — Mac can sleep | size=13"
+    [ -n "$since" ] && echo "Since $since | color=gray"
     echo "Pause | shell=$CTL param1=pause terminal=false refresh=true"
     ;;
 esac
