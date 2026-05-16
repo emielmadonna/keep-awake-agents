@@ -29,7 +29,6 @@ if [ -f "$STATE_FILE" ]; then
   status=$(awk -F= '$1=="status"{print $2; exit}' "$STATE_FILE")
   since_raw=$(awk -F= '$1=="since"{sub(/^since=/,"",$0); print; exit}' "$STATE_FILE")
   cpu_val=$(awk -F= '$1=="cpu"{print $2; exit}' "$STATE_FILE")
-  # Compute elapsed time as "12m", "1h 23m", "2d 5h".
   since_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S" "$since_raw" "+%s" 2>/dev/null)
   if [ -n "$since_epoch" ]; then
     delta=$(( $(date "+%s") - since_epoch ))
@@ -52,31 +51,32 @@ if [ -f "$STATE_FILE" ]; then
   done < <(awk -F= '$1=="process"{sub(/^process=/,"",$0); print}' "$STATE_FILE")
 fi
 
-# Top icon + status header + primary toggle.
 total=$((claude_n + codex_n + other_n))
 agent_word="agents"; [ "$total" = "1" ] && agent_word="agent"
 
+# ── Status header ─────────────────────────────────────────────────────────────
 case "$status" in
   active)
     echo ":cup.and.saucer.fill:"
     echo "---"
-    echo "$total $agent_word keeping Mac awake | size=13"
+    echo "Keeping Mac awake | size=13"
     [ "$claude_n" -gt 0 ] && echo "Claude Code: $claude_n | color=gray"
     [ "$codex_n"  -gt 0 ] && echo "Codex: $codex_n | color=gray"
     [ "$other_n"  -gt 0 ] && echo "Other: $other_n | color=gray"
-    [ -n "$cpu_val" ] && echo "CPU: ${cpu_val}% | color=gray"
-    [ -n "$duration" ] && echo "Awake for $duration | color=gray"
+    detail=""
+    [ -n "$cpu_val" ]   && detail="${cpu_val}% CPU"
+    [ -n "$duration" ]  && detail="${detail:+$detail · }${duration}"
+    [ -n "$detail" ]    && echo "$detail | color=gray"
     echo "Pause | shell=$CTL param1=pause terminal=false refresh=true"
     ;;
   cpu-idle)
     echo ":cup.and.saucer:"
     echo "---"
-    echo "$total $agent_word idle — Mac can sleep | size=13"
+    echo "Agents idle — Mac can sleep | size=13"
     [ "$claude_n" -gt 0 ] && echo "Claude Code: $claude_n | color=gray"
     [ "$codex_n"  -gt 0 ] && echo "Codex: $codex_n | color=gray"
     [ "$other_n"  -gt 0 ] && echo "Other: $other_n | color=gray"
-    [ -n "$cpu_val" ] && echo "CPU: ${cpu_val}% (below ${cpu_thr}% threshold) | color=gray"
-    [ -n "$duration" ] && echo "Idle for $duration | color=gray"
+    [ -n "$cpu_val" ] && echo "${cpu_val}% CPU · idle for $duration | color=gray"
     echo "Pause | shell=$CTL param1=pause terminal=false refresh=true"
     ;;
   paused)
@@ -89,7 +89,7 @@ case "$status" in
   *)
     echo ":moon.zzz:"
     echo "---"
-    echo "Idle — Mac can sleep | size=13"
+    echo "No agents — Mac can sleep | size=13"
     [ -n "$duration" ] && echo "Idle for $duration | color=gray"
     echo "Pause | shell=$CTL param1=pause terminal=false refresh=true"
     ;;
@@ -97,49 +97,55 @@ esac
 
 echo "---"
 
-# Poll interval — parent shows current value, submenu has selectable options.
-echo "Poll interval: ${poll}s"
-for v in 5 15 30 60; do
-  if [ "$poll" = "$v" ]; then
-    echo "-- ${v} seconds | checked=true shell=$CTL param1=set-poll param2=${v} terminal=false refresh=true"
-  else
-    echo "-- ${v} seconds | shell=$CTL param1=set-poll param2=${v} terminal=false refresh=true"
-  fi
-done
+# ── Settings ──────────────────────────────────────────────────────────────────
 
-# Display sleep block toggle.
-if [ "$display" = "1" ]; then
-  echo "Block display sleep: On"
-  echo "-- On  | checked=true shell=$CTL param1=set-display param2=1 terminal=false refresh=true"
-  echo "-- Off | shell=$CTL param1=set-display param2=0 terminal=false refresh=true"
+# 1. Auto-sleep — CPU threshold + delay combined in one submenu.
+delay_secs=$((cpu_dur * poll))
+if [ "$cpu_thr" = "0" ]; then
+  echo "Auto-sleep: off"
 else
-  echo "Block display sleep: Off"
-  echo "-- On  | shell=$CTL param1=set-display param2=1 terminal=false refresh=true"
-  echo "-- Off | checked=true shell=$CTL param1=set-display param2=0 terminal=false refresh=true"
+  echo "Auto-sleep: below ${cpu_thr}% for ~${delay_secs}s"
 fi
-
-# CPU-idle threshold — 0 = disabled.
-cpu_thr_label="${cpu_thr}%"; [ "$cpu_thr" = "0" ] && cpu_thr_label="Off"
-echo "CPU-idle threshold: ${cpu_thr_label}"
+# Threshold options.
 for v in 0 3 5 10 20; do
-  label="${v}%"; [ "$v" = "0" ] && label="Off (always awake)"
+  [ "$v" = "0" ] && label="Off — always stay awake" || label="Below ${v}%"
   if [ "$cpu_thr" = "$v" ]; then
     echo "-- $label | checked=true shell=$CTL param1=set-cpu-threshold param2=${v} terminal=false refresh=true"
   else
     echo "-- $label | shell=$CTL param1=set-cpu-threshold param2=${v} terminal=false refresh=true"
   fi
 done
+# Delay options (only relevant when threshold is active; shown greyed when off).
+echo "-- ─── sleep after ─── | color=#888888 size=11"
+for v in 1 2 3 5; do
+  secs=$((v * poll))
+  if [ "$cpu_thr" = "0" ]; then
+    echo "-- ~${secs}s | color=gray shell=$CTL param1=set-cpu-duration param2=${v} terminal=false refresh=true"
+  elif [ "$cpu_dur" = "$v" ]; then
+    echo "-- ~${secs}s | checked=true shell=$CTL param1=set-cpu-duration param2=${v} terminal=false refresh=true"
+  else
+    echo "-- ~${secs}s | shell=$CTL param1=set-cpu-duration param2=${v} terminal=false refresh=true"
+  fi
+done
 
-# CPU-idle duration (only shown when threshold is active).
-if [ "$cpu_thr" != "0" ]; then
-  delay_secs=$((cpu_dur * poll))
-  echo "CPU-idle delay: ${cpu_dur} polls (~${delay_secs}s)"
-  for v in 1 2 3 5; do
-    secs=$((v * poll))
-    if [ "$cpu_dur" = "$v" ]; then
-      echo "-- ${v} polls (~${secs}s) | checked=true shell=$CTL param1=set-cpu-duration param2=${v} terminal=false refresh=true"
-    else
-      echo "-- ${v} polls (~${secs}s) | shell=$CTL param1=set-cpu-duration param2=${v} terminal=false refresh=true"
-    fi
-  done
+# 2. Check interval.
+echo "Check every: ${poll}s"
+for v in 5 15 30 60; do
+  [ "$v" = "60" ] && label="60s (1 min)" || label="${v}s"
+  if [ "$poll" = "$v" ]; then
+    echo "-- $label | checked=true shell=$CTL param1=set-poll param2=${v} terminal=false refresh=true"
+  else
+    echo "-- $label | shell=$CTL param1=set-poll param2=${v} terminal=false refresh=true"
+  fi
+done
+
+# 3. Screen sleep.
+if [ "$display" = "1" ]; then
+  echo "Screen: stays on"
+  echo "-- Stays on | checked=true shell=$CTL param1=set-display param2=1 terminal=false refresh=true"
+  echo "-- Dims normally | shell=$CTL param1=set-display param2=0 terminal=false refresh=true"
+else
+  echo "Screen: dims normally"
+  echo "-- Stays on | shell=$CTL param1=set-display param2=1 terminal=false refresh=true"
+  echo "-- Dims normally | checked=true shell=$CTL param1=set-display param2=0 terminal=false refresh=true"
 fi
