@@ -20,13 +20,21 @@ display=$(awk -F= '/^PREVENT_DISPLAY_SLEEP=/{print $2; exit}' "$CONFIG_FILE" 2>/
 [ -z "$display" ] && display=0
 
 # Current state + per-app session counts.
-status=unknown; since=""; claude_n=0; codex_n=0; other_n=0
+status=unknown; duration=""; claude_n=0; codex_n=0; other_n=0
 if [ -f "$STATE_FILE" ]; then
   status=$(awk -F= '$1=="status"{print $2; exit}' "$STATE_FILE")
   since_raw=$(awk -F= '$1=="since"{sub(/^since=/,"",$0); print; exit}' "$STATE_FILE")
-  # Reformat "2026-05-15 16:46:24" → "4:46 PM" (12-hour, no seconds).
-  since=$(date -j -f "%Y-%m-%d %H:%M:%S" "$since_raw" "+%-I:%M %p" 2>/dev/null)
-  [ -z "$since" ] && since="$since_raw"
+  # Compute elapsed time as "12m", "1h 23m", "2d 5h".
+  since_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S" "$since_raw" "+%s" 2>/dev/null)
+  if [ -n "$since_epoch" ]; then
+    delta=$(( $(date "+%s") - since_epoch ))
+    [ "$delta" -lt 0 ] && delta=0
+    if   [ "$delta" -lt 60 ];    then duration="${delta}s"
+    elif [ "$delta" -lt 3600 ];  then duration="$((delta/60))m"
+    elif [ "$delta" -lt 86400 ]; then duration="$((delta/3600))h $((delta%3600/60))m"
+    else                              duration="$((delta/86400))d $((delta%86400/3600))h"
+    fi
+  fi
   while IFS= read -r proc; do
     [ -z "$proc" ] && continue
     if [[ "$proc" == *"MacOS/claude"* ]] || [[ "$proc" == *"claude-code/"*"cli.js"* ]]; then
@@ -51,21 +59,21 @@ case "$status" in
     [ "$claude_n" -gt 0 ] && echo "Claude Code: $claude_n | color=gray"
     [ "$codex_n"  -gt 0 ] && echo "Codex: $codex_n | color=gray"
     [ "$other_n"  -gt 0 ] && echo "Other: $other_n | color=gray"
-    echo "Since $since | color=gray"
+    [ -n "$duration" ] && echo "Awake for $duration | color=gray"
     echo "Pause | shell=$CTL param1=pause terminal=false refresh=true"
     ;;
   paused)
     echo ":pause.circle:"
     echo "---"
     echo "Paused — Mac can sleep | size=13"
-    echo "Since $since | color=gray"
+    [ -n "$duration" ] && echo "Paused for $duration | color=gray"
     echo "Resume | shell=$CTL param1=resume terminal=false refresh=true"
     ;;
   *)
     echo ":moon.zzz:"
     echo "---"
     echo "Idle — Mac can sleep | size=13"
-    [ -n "$since" ] && echo "Since $since | color=gray"
+    [ -n "$duration" ] && echo "Idle for $duration | color=gray"
     echo "Pause | shell=$CTL param1=pause terminal=false refresh=true"
     ;;
 esac

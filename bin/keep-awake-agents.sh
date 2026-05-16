@@ -78,11 +78,11 @@ get_matched_processes() {
 }
 
 write_state() {
-  # $1 = status (active|idle|paused); remaining stdin = process lines
-  local status=$1
+  # $1 = status (active|idle|paused); $2 = since timestamp; stdin = process lines
+  local status=$1 since=$2
   {
     echo "status=$status"
-    echo "since=$(date '+%Y-%m-%d %H:%M:%S')"
+    echo "since=$since"
     while IFS= read -r line; do
       [ -n "$line" ] && echo "process=$line"
     done
@@ -112,24 +112,28 @@ stop_caffeinate() {
   fi
 }
 
+now_ts() { date '+%Y-%m-%d %H:%M:%S'; }
+
 cleanup() {
   stop_caffeinate
-  printf '' | write_state idle
+  printf '' | write_state idle "$(now_ts)"
   exit 0
 }
 trap cleanup INT TERM
 
 log "started (pid $$, poll ${POLL_INTERVAL}s, prevent_display=${PREVENT_DISPLAY_SLEEP}, extra_patterns=${#EXTRA_PATTERNS[@]})"
 prev_status=""
+since_ts=""
 
 while true; do
   if [ -f "$PAUSE_FLAG" ]; then
     stop_caffeinate
     if [ "$prev_status" != "paused" ]; then
+      since_ts=$(now_ts)
       log "paused (flag file present)"
-      printf '' | write_state paused
       prev_status=paused
     fi
+    printf '' | write_state paused "$since_ts"
     sleep "$POLL_INTERVAL"
     continue
   fi
@@ -139,20 +143,22 @@ while true; do
   if [ -n "$matches" ]; then
     start_caffeinate
     if [ "$prev_status" != "active" ]; then
+      since_ts=$(now_ts)
       log "ACTIVE — agents detected:"
       while IFS= read -r line; do
         [ -n "$line" ] && log "  $line"
       done <<< "$matches"
       prev_status=active
     fi
-    printf '%s\n' "$matches" | write_state active
+    printf '%s\n' "$matches" | write_state active "$since_ts"
   else
     stop_caffeinate
     if [ "$prev_status" != "idle" ]; then
+      since_ts=$(now_ts)
       log "idle — no agents, system may sleep"
-      printf '' | write_state idle
       prev_status=idle
     fi
+    printf '' | write_state idle "$since_ts"
   fi
 
   sleep "$POLL_INTERVAL"
