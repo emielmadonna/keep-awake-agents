@@ -32,11 +32,12 @@ if [[ "$reply" =~ ^[Yy]$ ]]; then
         "$HOME/Library/Logs/keep-awake.stderr.log"
 fi
 
-# Refresh SwiftBar so the ☕ icon disappears immediately.
+# Remove SwiftBar from Login Items (installed by install.sh).
+osascript -e 'tell application "System Events" to delete login item "SwiftBar"' 2>/dev/null || true
+
+# Quit SwiftBar so the ☕ icon disappears immediately.
 if pgrep -x SwiftBar >/dev/null 2>&1; then
   osascript -e 'tell application "SwiftBar" to quit' 2>/dev/null || true
-  sleep 1
-  open -a SwiftBar 2>/dev/null || true
 fi
 
 say "Uninstalled."

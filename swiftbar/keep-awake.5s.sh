@@ -21,7 +21,7 @@ cpu_dur=$(awk -F= '/^CPU_IDLE_DURATION=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/
 [ -z "$poll" ]    && poll=15
 [ -z "$display" ] && display=0
 [ -z "$cpu_thr" ] && cpu_thr=5
-[ -z "$cpu_dur" ] && cpu_dur=3
+[ -z "$cpu_dur" ] && cpu_dur=120
 
 # Current state + per-app session counts.
 status=unknown; duration=""; claude_n=0; codex_n=0; other_n=0; cpu_val=""
@@ -116,15 +116,17 @@ for v in 0 3 5 10 20; do
   fi
 done
 # Delay options (only relevant when threshold is active; shown greyed when off).
+# Values are poll counts; labels show wall-clock minutes at current poll interval.
 echo "-- ─── sleep after ─── | color=#888888 size=11"
-for v in 1 2 3 5; do
-  secs=$((v * poll))
+for v in 24 60 120 360; do
+  mins=$(( (v * poll + 59) / 60 ))
+  label="${mins} min"
   if [ "$cpu_thr" = "0" ]; then
-    echo "-- ~${secs}s | color=gray shell=$CTL param1=set-cpu-duration param2=${v} terminal=false refresh=true"
+    echo "-- $label | color=gray shell=$CTL param1=set-cpu-duration param2=${v} terminal=false refresh=true"
   elif [ "$cpu_dur" = "$v" ]; then
-    echo "-- ~${secs}s | checked=true shell=$CTL param1=set-cpu-duration param2=${v} terminal=false refresh=true"
+    echo "-- $label | checked=true shell=$CTL param1=set-cpu-duration param2=${v} terminal=false refresh=true"
   else
-    echo "-- ~${secs}s | shell=$CTL param1=set-cpu-duration param2=${v} terminal=false refresh=true"
+    echo "-- $label | shell=$CTL param1=set-cpu-duration param2=${v} terminal=false refresh=true"
   fi
 done
 

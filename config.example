@@ -20,10 +20,15 @@ PREVENT_DISPLAY_SLEEP=0
 # CPU-idle threshold (percent). When the combined CPU% of all matched processes
 # stays below this value for CPU_IDLE_DURATION consecutive polls, the wakelock
 # is released and the Mac can sleep — even though the agent processes are still
-# running. This covers the common case of Claude/Codex sitting at a prompt
-# waiting for user input. Set to 0 to disable (always keep awake).
+# running. Set to 0 to disable (always keep awake while processes are running).
+#
+# NOTE: keep this low-but-nonzero AND keep CPU_IDLE_DURATION large. Claude/Codex
+# routinely show near-0% CPU while waiting for an API response; if the duration
+# is too short, caffeinate exits during a normal LLM round-trip and the Mac (or
+# hotspot connection) drops.
 CPU_IDLE_THRESHOLD=5
 
 # Number of consecutive polls below CPU_IDLE_THRESHOLD before going idle.
-# At the default 15s poll interval: 3 polls = ~45 seconds of inactivity.
-CPU_IDLE_DURATION=3
+# At POLL_INTERVAL=5: 120 polls = 10 minutes of sustained inactivity.
+# Keep this large enough to outlast any LLM API round-trip (often 30–120 s).
+CPU_IDLE_DURATION=120

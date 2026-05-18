@@ -28,7 +28,7 @@ EXTRA_PATTERNS=()
 # processes stays below this value for CPU_IDLE_DURATION consecutive polls.
 # Set to 0 to disable (always keep awake while processes are running).
 CPU_IDLE_THRESHOLD=5
-CPU_IDLE_DURATION=3
+CPU_IDLE_DURATION=120
 
 # shellcheck source=/dev/null
 [ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"

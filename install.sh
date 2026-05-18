@@ -96,6 +96,9 @@ if [[ -d "$SWIFTBAR_APP" ]]; then
   sleep 1
   open -a "$SWIFTBAR_APP"
   say "  SwiftBar configured and launched"
+  # Add SwiftBar to Login Items so it restarts automatically after a reboot.
+  osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/SwiftBar.app", hidden:false}' 2>/dev/null || true
+  say "  SwiftBar added to Login Items (auto-starts on login)"
 fi
 
 echo ""

@@ -81,6 +81,14 @@ State + audit log live at:
 - `caffeinate -s` keeps the Mac awake with the lid closed **only on AC power**.
   Apple enforces battery clamshell sleep at the kernel level. Plug in for long
   overnight runs.
+- **Hotspot / Wi-Fi drops while agents are running?** The CPU-idle logic
+  releases the wakelock when agents stay below `CPU_IDLE_THRESHOLD` for
+  `CPU_IDLE_DURATION` consecutive polls. Because Claude/Codex sit near 0% CPU
+  while waiting for an LLM response, a short duration (< ~2 min) can release
+  the wakelock mid-request and let the Mac (or hotspot connection) drop. The
+  default is set to 120 polls (10 min at 5 s interval) to avoid this. If you
+  still see drops, set `CPU_IDLE_THRESHOLD=0` in the config to disable the
+  check entirely.
 - The matcher is intentionally narrow. If your agents run under unusual
   wrappers, add a pattern in `EXTRA_PATTERNS` rather than editing the daemon.
 - Logs are append-only and uncapped. They're small, but rotate or delete them
