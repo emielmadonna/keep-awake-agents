@@ -32,14 +32,37 @@ No Homebrew needed. No admin password needed.
 
 ## Configure
 
-Edit `~/.config/keep-awake-agents/config` (or click **Settings…** in the menu
-dropdown). Three knobs:
+Edit `~/.config/keep-awake-agents/config` (or use the menu dropdown).
 
 | Variable | Default | What it does |
 |----------|---------|--------------|
 | `POLL_INTERVAL` | `15` | Seconds between checks. Lower = more responsive, more CPU. |
-| `EXTRA_PATTERNS` | `()` | Extra `pgrep -f` patterns. Useful for keeping awake while a render, training, or sync job runs. |
+| `EXTRA_PATTERNS` | `()` | Extra `pgrep -f` patterns to match additional processes. |
 | `PREVENT_DISPLAY_SLEEP` | `0` | Set to `1` to also block display sleep (`caffeinate -d`). |
+| `CPU_IDLE_THRESHOLD` | `5` | Release wakelock when CPU % stays below this. `0` = never release. |
+| `CPU_IDLE_DURATION` | `120` | Polls below threshold before releasing. At 5 s poll = 10 min. |
+| `NETWORK_KEEPALIVE` | `0` | **Set to `1` to keep Wi-Fi / hotspot alive with lid closed.** Sends a ping every `NETWORK_KEEPALIVE_INTERVAL` seconds. |
+| `NETWORK_KEEPALIVE_HOST` | `8.8.8.8` | Ping target. Use your router's LAN IP to avoid internet traffic. |
+| `NETWORK_KEEPALIVE_INTERVAL` | `30` | Seconds between keepalive pings. |
+
+### Keeping your hotspot connected with the lid closed
+
+Enable the network keepalive:
+
+```bash
+# in ~/.config/keep-awake-agents/config
+NETWORK_KEEPALIVE=1
+```
+
+Or click **Network keepalive: off → on** in the menu bar dropdown.
+
+**What this does:** cellular hotspots and some Wi-Fi routers drop clients that
+send no traffic (typically after 20–30 s). With the lid closed on AC power the
+Mac stays awake via `caffeinate -s` but sends no packets, so the hotspot drops
+it. The keepalive pings prevent that.
+
+**Battery note:** `caffeinate -s` only blocks sleep on AC power. On battery,
+macOS forces sleep when the lid closes regardless. Plug in for lid-closed runs.
 
 After editing, restart the daemon:
 
@@ -81,14 +104,7 @@ State + audit log live at:
 - `caffeinate -s` keeps the Mac awake with the lid closed **only on AC power**.
   Apple enforces battery clamshell sleep at the kernel level. Plug in for long
   overnight runs.
-- **Hotspot / Wi-Fi drops while agents are running?** The CPU-idle logic
-  releases the wakelock when agents stay below `CPU_IDLE_THRESHOLD` for
-  `CPU_IDLE_DURATION` consecutive polls. Because Claude/Codex sit near 0% CPU
-  while waiting for an LLM response, a short duration (< ~2 min) can release
-  the wakelock mid-request and let the Mac (or hotspot connection) drop. The
-  default is set to 120 polls (10 min at 5 s interval) to avoid this. If you
-  still see drops, set `CPU_IDLE_THRESHOLD=0` in the config to disable the
-  check entirely.
+- **Hotspot / Wi-Fi drops?** See the [Keeping your hotspot connected](#keeping-your-hotspot-connected-with-the-lid-closed) section above. Enable `NETWORK_KEEPALIVE=1`.
 - The matcher is intentionally narrow. If your agents run under unusual
   wrappers, add a pattern in `EXTRA_PATTERNS` rather than editing the daemon.
 - Logs are append-only and uncapped. They're small, but rotate or delete them

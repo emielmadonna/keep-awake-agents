@@ -18,6 +18,7 @@ STATE_DIR="$HOME/Library/Application Support/keep-awake"
 STATE_FILE="$STATE_DIR/state"
 PAUSE_FLAG="$STATE_DIR/paused"
 CAFFEINATE_PID_FILE="$STATE_DIR/caffeinate.pid"
+KEEPALIVE_PID_FILE="$STATE_DIR/keepalive.pid"
 CONFIG_FILE="$HOME/.config/keep-awake-agents/config"
 
 # Defaults (overridable from config file).
@@ -29,6 +30,13 @@ EXTRA_PATTERNS=()
 # Set to 0 to disable (always keep awake while processes are running).
 CPU_IDLE_THRESHOLD=5
 CPU_IDLE_DURATION=120
+# Network keepalive: send a ping every NETWORK_KEEPALIVE_INTERVAL seconds while
+# awake. Keeps cellular hotspot connections alive (iPhones/Androids drop idle
+# clients) and prevents Wi-Fi from disconnecting on inactivity — including with
+# the lid closed on AC power. Set to 0 to disable.
+NETWORK_KEEPALIVE=0
+NETWORK_KEEPALIVE_HOST=8.8.8.8
+NETWORK_KEEPALIVE_INTERVAL=30
 
 # shellcheck source=/dev/null
 [ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
@@ -131,16 +139,44 @@ stop_caffeinate() {
   fi
 }
 
+start_keepalive() {
+  [ "${NETWORK_KEEPALIVE:-0}" != "1" ] && return
+  if [ -f "$KEEPALIVE_PID_FILE" ] && kill -0 "$(cat "$KEEPALIVE_PID_FILE")" 2>/dev/null; then
+    return
+  fi
+  (
+    while true; do
+      ping -c 1 -t 5 "${NETWORK_KEEPALIVE_HOST:-8.8.8.8}" >/dev/null 2>&1 || true
+      sleep "${NETWORK_KEEPALIVE_INTERVAL:-30}"
+    done
+  ) &
+  local pid=$!
+  echo "$pid" > "$KEEPALIVE_PID_FILE"
+  log "keepalive started (pid $pid, host=${NETWORK_KEEPALIVE_HOST:-8.8.8.8}, interval=${NETWORK_KEEPALIVE_INTERVAL:-30}s)"
+}
+
+stop_keepalive() {
+  if [ -f "$KEEPALIVE_PID_FILE" ]; then
+    local pid; pid=$(cat "$KEEPALIVE_PID_FILE")
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+      log "keepalive stopped (pid $pid)"
+    fi
+    rm -f "$KEEPALIVE_PID_FILE"
+  fi
+}
+
 now_ts() { date '+%Y-%m-%d %H:%M:%S'; }
 
 cleanup() {
   stop_caffeinate
+  stop_keepalive
   printf '' | write_state idle "$(now_ts)"
   exit 0
 }
 trap cleanup INT TERM
 
-log "started (pid $$, poll ${POLL_INTERVAL}s, prevent_display=${PREVENT_DISPLAY_SLEEP}, cpu_threshold=${CPU_IDLE_THRESHOLD}%, cpu_duration=${CPU_IDLE_DURATION}, extra_patterns=${#EXTRA_PATTERNS[@]})"
+log "started (pid $$, poll ${POLL_INTERVAL}s, prevent_display=${PREVENT_DISPLAY_SLEEP}, cpu_threshold=${CPU_IDLE_THRESHOLD}%, cpu_duration=${CPU_IDLE_DURATION}, keepalive=${NETWORK_KEEPALIVE}/${NETWORK_KEEPALIVE_HOST}/${NETWORK_KEEPALIVE_INTERVAL}s, extra_patterns=${#EXTRA_PATTERNS[@]})"
 prev_status=""
 since_ts=""
 cpu_idle_count=0
@@ -148,6 +184,7 @@ cpu_idle_count=0
 while true; do
   if [ -f "$PAUSE_FLAG" ]; then
     stop_caffeinate
+    stop_keepalive
     cpu_idle_count=0
     if [ "$prev_status" != "paused" ]; then
       since_ts=$(now_ts)
@@ -181,6 +218,7 @@ while true; do
        && [ "$cpu_idle_count" -ge "${CPU_IDLE_DURATION:-3}" ]; then
       # Processes are running but have been idle below the CPU threshold.
       stop_caffeinate
+      stop_keepalive
       if [ "$prev_status" != "cpu-idle" ]; then
         since_ts=$(now_ts)
         log "CPU-IDLE — agents below ${CPU_IDLE_THRESHOLD}% × ${CPU_IDLE_DURATION} polls (cpu=${total_cpu}%)"
@@ -189,6 +227,7 @@ while true; do
       printf '%s\n' "$matches" | write_state cpu-idle "$since_ts" "$total_cpu"
     else
       start_caffeinate
+      start_keepalive
       if [ "$prev_status" != "active" ]; then
         since_ts=$(now_ts)
         log "ACTIVE — agents detected:"
@@ -201,6 +240,7 @@ while true; do
     fi
   else
     stop_caffeinate
+    stop_keepalive
     cpu_idle_count=0
     if [ "$prev_status" != "idle" ]; then
       since_ts=$(now_ts)

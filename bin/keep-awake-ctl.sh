@@ -12,6 +12,9 @@
 #   keep-awake-ctl.sh set-display <0|1>
 #   keep-awake-ctl.sh set-cpu-threshold <percent|0>
 #   keep-awake-ctl.sh set-cpu-duration <polls>
+#   keep-awake-ctl.sh set-keepalive <0|1>
+#   keep-awake-ctl.sh set-keepalive-host <host>
+#   keep-awake-ctl.sh set-keepalive-interval <seconds>
 
 set -e
 
@@ -67,8 +70,20 @@ case "${1:-}" in
     set_var CPU_IDLE_DURATION "$2"
     restart_daemon
     ;;
+  set-keepalive)
+    set_var NETWORK_KEEPALIVE "$2"
+    restart_daemon
+    ;;
+  set-keepalive-host)
+    set_var NETWORK_KEEPALIVE_HOST "$2"
+    restart_daemon
+    ;;
+  set-keepalive-interval)
+    set_var NETWORK_KEEPALIVE_INTERVAL "$2"
+    restart_daemon
+    ;;
   *)
-    echo "usage: $0 {pause|resume|toggle|set-poll N|set-display 0|1|set-cpu-threshold N|set-cpu-duration N}" >&2
+    echo "usage: $0 {pause|resume|toggle|set-poll N|set-display 0|1|set-cpu-threshold N|set-cpu-duration N|set-keepalive 0|1|set-keepalive-host HOST|set-keepalive-interval N}" >&2
     exit 1
     ;;
 esac

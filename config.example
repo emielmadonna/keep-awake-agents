@@ -32,3 +32,20 @@ CPU_IDLE_THRESHOLD=5
 # At POLL_INTERVAL=5: 120 polls = 10 minutes of sustained inactivity.
 # Keep this large enough to outlast any LLM API round-trip (often 30–120 s).
 CPU_IDLE_DURATION=120
+
+# ── Network keepalive ────────────────────────────────────────────────────────
+# When NETWORK_KEEPALIVE=1, a background ping runs every NETWORK_KEEPALIVE_INTERVAL
+# seconds while the wakelock is active.
+#
+# Why: cellular hotspots (iPhone/Android) and some Wi-Fi routers auto-disconnect
+# clients that send no traffic. With the lid closed on AC power the Mac stays
+# awake (caffeinate -s) but sends no packets, so the hotspot drops it within
+# ~20–30 s. The ping keeps both sides alive.
+#
+# NETWORK_KEEPALIVE_HOST  — anything reachable on your current network works.
+#   8.8.8.8 (Google DNS) is a safe default. Use your router's LAN IP if you
+#   want to avoid going to the internet.
+# NETWORK_KEEPALIVE_INTERVAL — 30 s is well below any hotspot idle timeout.
+NETWORK_KEEPALIVE=0
+NETWORK_KEEPALIVE_HOST=8.8.8.8
+NETWORK_KEEPALIVE_INTERVAL=30

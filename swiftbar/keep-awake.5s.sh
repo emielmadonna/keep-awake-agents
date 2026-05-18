@@ -18,10 +18,12 @@ poll=$(awk -F= '/^POLL_INTERVAL=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
 display=$(awk -F= '/^PREVENT_DISPLAY_SLEEP=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
 cpu_thr=$(awk -F= '/^CPU_IDLE_THRESHOLD=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
 cpu_dur=$(awk -F= '/^CPU_IDLE_DURATION=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
-[ -z "$poll" ]    && poll=15
-[ -z "$display" ] && display=0
-[ -z "$cpu_thr" ] && cpu_thr=5
-[ -z "$cpu_dur" ] && cpu_dur=120
+keepalive=$(awk -F= '/^NETWORK_KEEPALIVE=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
+[ -z "$poll" ]     && poll=15
+[ -z "$display" ]  && display=0
+[ -z "$cpu_thr" ]  && cpu_thr=5
+[ -z "$cpu_dur" ]  && cpu_dur=120
+[ -z "$keepalive" ] && keepalive=0
 
 # Current state + per-app session counts.
 status=unknown; duration=""; claude_n=0; codex_n=0; other_n=0; cpu_val=""
@@ -150,4 +152,15 @@ else
   echo "Screen: dims normally"
   echo "-- Stays on | shell=$CTL param1=set-display param2=1 terminal=false refresh=true"
   echo "-- Dims normally | checked=true shell=$CTL param1=set-display param2=0 terminal=false refresh=true"
+fi
+
+# 4. Network keepalive (hotspot / Wi-Fi with lid closed).
+if [ "$keepalive" = "1" ]; then
+  echo "Network keepalive: on"
+  echo "-- On — ping every 30s | checked=true shell=$CTL param1=set-keepalive param2=1 terminal=false refresh=true"
+  echo "-- Off | shell=$CTL param1=set-keepalive param2=0 terminal=false refresh=true"
+else
+  echo "Network keepalive: off"
+  echo "-- On — ping every 30s | shell=$CTL param1=set-keepalive param2=1 terminal=false refresh=true"
+  echo "-- Off | checked=true shell=$CTL param1=set-keepalive param2=0 terminal=false refresh=true"
 fi
