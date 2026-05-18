@@ -17,6 +17,7 @@
 #   keep-awake-ctl.sh set-keepalive-interval <seconds>
 #   keep-awake-ctl.sh set-notify <0|1>
 #   keep-awake-ctl.sh set-notify-target <phone-or-email>
+#   keep-awake-ctl.sh set-notify-target-dialog
 #   keep-awake-ctl.sh set-notify-battery <percent>
 
 set -e
@@ -91,6 +92,19 @@ case "${1:-}" in
     ;;
   set-notify-target)
     set_var NOTIFY_TARGET "$2"
+    restart_daemon
+    ;;
+  set-notify-target-dialog)
+    # Read current value to pre-fill the dialog.
+    current=$(awk -F= '/^NOTIFY_TARGET=/{print $2; exit}' "$CONFIG" 2>/dev/null)
+    result=$(osascript \
+      -e 'on run argv' \
+      -e '  set cur to item 1 of argv' \
+      -e '  set res to text returned of (display dialog "Phone number or Apple ID email for iMessage alerts:" default answer cur buttons {"Cancel", "Save"} default button "Save" with title "keep-awake-agents")' \
+      -e '  return res' \
+      -e 'end run' -- "$current" 2>/dev/null) || exit 0
+    [ -z "$result" ] && exit 0
+    set_var NOTIFY_TARGET "$result"
     restart_daemon
     ;;
   set-notify-battery)

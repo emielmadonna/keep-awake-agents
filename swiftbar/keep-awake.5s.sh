@@ -20,12 +20,14 @@ cpu_thr=$(awk -F= '/^CPU_IDLE_THRESHOLD=/{print $2; exit}' "$CONFIG_FILE" 2>/dev
 cpu_dur=$(awk -F= '/^CPU_IDLE_DURATION=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
 keepalive=$(awk -F= '/^NETWORK_KEEPALIVE=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
 notify=$(awk -F= '/^NOTIFY_IMESSAGE=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
-[ -z "$poll" ]     && poll=15
-[ -z "$display" ]  && display=0
-[ -z "$cpu_thr" ]  && cpu_thr=5
-[ -z "$cpu_dur" ]  && cpu_dur=120
-[ -z "$keepalive" ] && keepalive=0
-[ -z "$notify" ]    && notify=0
+notify_target=$(awk -F= '/^NOTIFY_TARGET=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
+[ -z "$poll" ]          && poll=15
+[ -z "$display" ]       && display=0
+[ -z "$cpu_thr" ]       && cpu_thr=5
+[ -z "$cpu_dur" ]       && cpu_dur=120
+[ -z "$keepalive" ]     && keepalive=0
+[ -z "$notify" ]        && notify=0
+[ -z "$notify_target" ] && notify_target=""
 
 # Current state + per-app session counts.
 status=unknown; duration=""; claude_n=0; codex_n=0; other_n=0; cpu_val=""
@@ -176,4 +178,9 @@ else
   echo "iMessage alerts: off"
   echo "-- On | shell=$CTL param1=set-notify param2=1 terminal=false refresh=true"
   echo "-- Off | checked=true shell=$CTL param1=set-notify param2=0 terminal=false refresh=true"
+fi
+if [ -n "$notify_target" ]; then
+  echo "-- Send to: $notify_target | color=gray shell=$CTL param1=set-notify-target-dialog terminal=false refresh=true"
+else
+  echo "-- Set phone number… | shell=$CTL param1=set-notify-target-dialog terminal=false refresh=true"
 fi
