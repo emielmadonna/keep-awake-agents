@@ -15,6 +15,9 @@
 #   keep-awake-ctl.sh set-keepalive <0|1>
 #   keep-awake-ctl.sh set-keepalive-host <host>
 #   keep-awake-ctl.sh set-keepalive-interval <seconds>
+#   keep-awake-ctl.sh set-notify <0|1>
+#   keep-awake-ctl.sh set-notify-target <phone-or-email>
+#   keep-awake-ctl.sh set-notify-battery <percent>
 
 set -e
 
@@ -82,8 +85,20 @@ case "${1:-}" in
     set_var NETWORK_KEEPALIVE_INTERVAL "$2"
     restart_daemon
     ;;
+  set-notify)
+    set_var NOTIFY_IMESSAGE "$2"
+    restart_daemon
+    ;;
+  set-notify-target)
+    set_var NOTIFY_TARGET "$2"
+    restart_daemon
+    ;;
+  set-notify-battery)
+    set_var NOTIFY_BATTERY_PCT "$2"
+    restart_daemon
+    ;;
   *)
-    echo "usage: $0 {pause|resume|toggle|set-poll N|set-display 0|1|set-cpu-threshold N|set-cpu-duration N|set-keepalive 0|1|set-keepalive-host HOST|set-keepalive-interval N}" >&2
+    echo "usage: $0 {pause|resume|toggle|set-poll N|set-display 0|1|set-cpu-threshold N|set-cpu-duration N|set-keepalive 0|1|set-keepalive-host HOST|set-keepalive-interval N|set-notify 0|1|set-notify-target PHONE|set-notify-battery PCT}" >&2
     exit 1
     ;;
 esac

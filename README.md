@@ -44,6 +44,9 @@ Edit `~/.config/keep-awake-agents/config` (or use the menu dropdown).
 | `NETWORK_KEEPALIVE` | `0` | **Set to `1` to keep Wi-Fi / hotspot alive with lid closed.** Sends a ping every `NETWORK_KEEPALIVE_INTERVAL` seconds. |
 | `NETWORK_KEEPALIVE_HOST` | `8.8.8.8` | Ping target. Use your router's LAN IP to avoid internet traffic. |
 | `NETWORK_KEEPALIVE_INTERVAL` | `30` | Seconds between keepalive pings. |
+| `NOTIFY_IMESSAGE` | `0` | Set to `1` to send iMessage alerts to your phone. |
+| `NOTIFY_TARGET` | `` | Phone number (`+15551234567`) or Apple ID email to message. |
+| `NOTIFY_BATTERY_PCT` | `20` | Battery % that triggers the low-battery alert. |
 
 ### Keeping your hotspot connected with the lid closed
 
@@ -63,6 +66,23 @@ it. The keepalive pings prevent that.
 
 **Battery note:** `caffeinate -s` only blocks sleep on AC power. On battery,
 macOS forces sleep when the lid closes regardless. Plug in for lid-closed runs.
+
+### Phone alerts when you unplug
+
+Enable iMessage notifications so your phone warns you the moment you unplug:
+
+```bash
+# in ~/.config/keep-awake-agents/config
+NOTIFY_IMESSAGE=1
+NOTIFY_TARGET=+15551234567   # your own phone number
+NOTIFY_BATTERY_PCT=20        # also alert at this battery %
+```
+
+You'll get two types of messages:
+- **Unplugged alert** — fires the moment you pull the charger while keepalive is on. Tells you the current battery %.
+- **Low battery alert** — fires when battery drops below `NOTIFY_BATTERY_PCT` while on battery.
+
+Both reset when you plug back in, so you only get one of each per AC cycle. Requires the Mac's Messages app to be signed in to iMessage.
 
 After editing, restart the daemon:
 

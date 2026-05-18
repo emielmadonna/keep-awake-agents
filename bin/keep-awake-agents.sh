@@ -37,6 +37,14 @@ CPU_IDLE_DURATION=120
 NETWORK_KEEPALIVE=0
 NETWORK_KEEPALIVE_HOST=8.8.8.8
 NETWORK_KEEPALIVE_INTERVAL=30
+# iMessage notifications: sends a message to NOTIFY_TARGET (phone number like
+# +15551234567 or an Apple ID email) when:
+#   1. You unplug while keepalive is active (lid-close will drop the hotspot)
+#   2. Battery drops below NOTIFY_BATTERY_PCT% while on battery
+# Requires the Mac's Messages app to be signed in to iMessage.
+NOTIFY_IMESSAGE=0
+NOTIFY_TARGET=""
+NOTIFY_BATTERY_PCT=20
 
 # shellcheck source=/dev/null
 [ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
@@ -155,6 +163,25 @@ start_keepalive() {
   log "keepalive started (pid $pid, host=${NETWORK_KEEPALIVE_HOST:-8.8.8.8}, interval=${NETWORK_KEEPALIVE_INTERVAL:-30}s)"
 }
 
+get_battery_pct() {
+  pmset -g batt 2>/dev/null | grep -o '[0-9]*%' | head -1 | tr -d '%'
+}
+
+is_on_ac() {
+  pmset -g batt 2>/dev/null | grep -q 'AC Power' && echo 1 || echo 0
+}
+
+send_imessage() {
+  local msg=$1
+  [ "${NOTIFY_IMESSAGE:-0}" != "1" ] && return
+  [ -z "${NOTIFY_TARGET:-}" ] && return
+  osascript \
+    -e "tell application \"Messages\"" \
+    -e "  send \"${msg}\" to buddy \"${NOTIFY_TARGET}\" of service \"iMessage\"" \
+    -e "end tell" 2>/dev/null || true
+  log "iMessage → ${NOTIFY_TARGET}: $msg"
+}
+
 stop_keepalive() {
   if [ -f "$KEEPALIVE_PID_FILE" ]; then
     local pid; pid=$(cat "$KEEPALIVE_PID_FILE")
@@ -176,10 +203,13 @@ cleanup() {
 }
 trap cleanup INT TERM
 
-log "started (pid $$, poll ${POLL_INTERVAL}s, prevent_display=${PREVENT_DISPLAY_SLEEP}, cpu_threshold=${CPU_IDLE_THRESHOLD}%, cpu_duration=${CPU_IDLE_DURATION}, keepalive=${NETWORK_KEEPALIVE}/${NETWORK_KEEPALIVE_HOST}/${NETWORK_KEEPALIVE_INTERVAL}s, extra_patterns=${#EXTRA_PATTERNS[@]})"
+log "started (pid $$, poll ${POLL_INTERVAL}s, prevent_display=${PREVENT_DISPLAY_SLEEP}, cpu_threshold=${CPU_IDLE_THRESHOLD}%, cpu_duration=${CPU_IDLE_DURATION}, keepalive=${NETWORK_KEEPALIVE}/${NETWORK_KEEPALIVE_HOST}/${NETWORK_KEEPALIVE_INTERVAL}s, notify=${NOTIFY_IMESSAGE}/${NOTIFY_TARGET:-none}, extra_patterns=${#EXTRA_PATTERNS[@]})"
 prev_status=""
 since_ts=""
 cpu_idle_count=0
+prev_ac=$(is_on_ac)
+notified_unplug=0
+notified_battery=0
 
 while true; do
   if [ -f "$PAUSE_FLAG" ]; then
@@ -248,6 +278,37 @@ while true; do
       prev_status=idle
     fi
     printf '' | write_state idle "$since_ts"
+  fi
+
+  # ── iMessage notifications ───────────────────────────────────────────────────
+  # Only fire when keepalive is on and the wakelock is active (we're actually
+  # holding the connection). Sends two kinds of alerts:
+  #   1. Unplugged while keepalive active — lid-close will now drop the hotspot.
+  #   2. Battery below threshold while on battery — same risk, different trigger.
+  if [ "${NOTIFY_IMESSAGE:-0}" = "1" ] \
+     && [ -n "${NOTIFY_TARGET:-}" ] \
+     && [ "${NETWORK_KEEPALIVE:-0}" = "1" ] \
+     && [ "$prev_status" = "active" ]; then
+    current_ac=$(is_on_ac)
+    if [ "$current_ac" = "1" ]; then
+      # Back on AC — reset flags so notifications fire again next unplug.
+      notified_unplug=0
+      notified_battery=0
+    else
+      batt=$(get_battery_pct)
+      # Just unplugged.
+      if [ "$prev_ac" = "1" ] && [ "$notified_unplug" = "0" ]; then
+        send_imessage "⚡ Unplugged (${batt}% battery) — hotspot keepalive only holds on AC. Closing lid will drop the connection."
+        notified_unplug=1
+      fi
+      # Low battery warning.
+      if [ "$notified_battery" = "0" ] && [ -n "$batt" ] \
+         && [ "$batt" -le "${NOTIFY_BATTERY_PCT:-20}" ] 2>/dev/null; then
+        send_imessage "🔋 Battery at ${batt}% — closing the lid will disconnect your hotspot. Plug in to keep it alive."
+        notified_battery=1
+      fi
+    fi
+    prev_ac=$current_ac
   fi
 
   sleep "$POLL_INTERVAL"

@@ -19,11 +19,13 @@ display=$(awk -F= '/^PREVENT_DISPLAY_SLEEP=/{print $2; exit}' "$CONFIG_FILE" 2>/
 cpu_thr=$(awk -F= '/^CPU_IDLE_THRESHOLD=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
 cpu_dur=$(awk -F= '/^CPU_IDLE_DURATION=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
 keepalive=$(awk -F= '/^NETWORK_KEEPALIVE=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
+notify=$(awk -F= '/^NOTIFY_IMESSAGE=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null)
 [ -z "$poll" ]     && poll=15
 [ -z "$display" ]  && display=0
 [ -z "$cpu_thr" ]  && cpu_thr=5
 [ -z "$cpu_dur" ]  && cpu_dur=120
 [ -z "$keepalive" ] && keepalive=0
+[ -z "$notify" ]    && notify=0
 
 # Current state + per-app session counts.
 status=unknown; duration=""; claude_n=0; codex_n=0; other_n=0; cpu_val=""
@@ -163,4 +165,15 @@ else
   echo "Network keepalive: off"
   echo "-- On — ping every 30s | shell=$CTL param1=set-keepalive param2=1 terminal=false refresh=true"
   echo "-- Off | checked=true shell=$CTL param1=set-keepalive param2=0 terminal=false refresh=true"
+fi
+
+# 5. iMessage alerts (unplug + low battery warnings).
+if [ "$notify" = "1" ]; then
+  echo "iMessage alerts: on"
+  echo "-- On | checked=true shell=$CTL param1=set-notify param2=1 terminal=false refresh=true"
+  echo "-- Off | shell=$CTL param1=set-notify param2=0 terminal=false refresh=true"
+else
+  echo "iMessage alerts: off"
+  echo "-- On | shell=$CTL param1=set-notify param2=1 terminal=false refresh=true"
+  echo "-- Off | checked=true shell=$CTL param1=set-notify param2=0 terminal=false refresh=true"
 fi

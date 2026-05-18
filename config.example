@@ -49,3 +49,18 @@ CPU_IDLE_DURATION=120
 NETWORK_KEEPALIVE=0
 NETWORK_KEEPALIVE_HOST=8.8.8.8
 NETWORK_KEEPALIVE_INTERVAL=30
+
+# ── iMessage notifications ───────────────────────────────────────────────────
+# When NOTIFY_IMESSAGE=1, the daemon sends an iMessage to NOTIFY_TARGET when:
+#   1. You unplug while keepalive is active (lid-close will now drop the hotspot)
+#   2. Battery drops below NOTIFY_BATTERY_PCT% while on battery
+#
+# NOTIFY_TARGET — your phone number (+15551234567) or Apple ID email.
+#   The Mac's Messages app must be signed in to iMessage.
+#   Set this to your own number so alerts go to your iPhone.
+#
+# NOTIFY_BATTERY_PCT — battery % that triggers the low-battery alert.
+#   Default 20. Only fires once per AC cycle (resets when you plug back in).
+NOTIFY_IMESSAGE=0
+NOTIFY_TARGET=
+NOTIFY_BATTERY_PCT=20
