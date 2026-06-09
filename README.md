@@ -8,9 +8,10 @@ One monochrome menu bar icon, one button.
 
 | Icon | Meaning |
 |------|---------|
-| `:cup.and.saucer.fill:` (☕) | An agent is running — Mac will not sleep |
-| `:moon.zzz:` (💤)            | Idle — Mac can sleep normally |
-| `:pause.circle:` (⏸)        | Paused — daemon won't keep awake regardless |
+| `:cup.and.saucer.fill:` (☕) | Working — an agent is active, Mac stays awake |
+| `:cup.and.saucer:` (☕)      | Idle — agents quiet, Mac can sleep |
+| `:moon.zzz:` (💤)            | Nothing running — Mac sleeps normally |
+| `:pause.circle:` (⏸)        | Paused |
 
 ## Install
 
@@ -27,6 +28,7 @@ The installer:
 3. Drops a SwiftBar plugin for the menu bar icon.
 4. Writes a default config at `~/.config/keep-awake-agents/config`.
 5. Offers to download SwiftBar from its GitHub release if you don't have it.
+6. Offers to add the activity heartbeat hook to Claude Code (recommended).
 
 No Homebrew needed. No admin password needed.
 
@@ -34,19 +36,38 @@ No Homebrew needed. No admin password needed.
 
 Edit `~/.config/keep-awake-agents/config` (or use the menu dropdown).
 
+### Modes
+
+Pick a mode from the menu bar (or `keep-awake-ctl.sh set-mode NAME`). Each
+bundles the right settings; the menu shows **Custom** if you hand-tweak something
+under Advanced.
+
+| Mode | What it does | For |
+|------|--------------|-----|
+| **Desk** | Stay awake while working, sleep when idle. Lid-closed & keepalive off. | Plugged in at a desk (default) |
+| **Café** | Lid closed on battery + hotspot kept alive. | Mobile — café, on your phone's hotspot |
+| **Locked In** | Never sleep while an agent is running. | A critical run that must not die |
+
+Café and Locked In keep the lid-closed override on, which needs the one-time
+[lid-closed setup](#keeping-agents-alive-with-the-lid-closed-on-battery).
+
+### All settings
+
 | Variable | Default | What it does |
 |----------|---------|--------------|
-| `POLL_INTERVAL` | `15` | Seconds between checks. Lower = more responsive, more CPU. |
-| `EXTRA_PATTERNS` | `()` | Extra `pgrep -f` patterns to match additional processes. |
+| `MODE` | `desk` | Bundle label set by the menu / `set-mode` (informational). |
+| `AGENT_IDLE_MINUTES` | `5` | Sleep after this many minutes of no agent activity. `0` = never idle-sleep. |
+| `POLL_INTERVAL` | `15` | Seconds between checks. Lower = more responsive. |
 | `PREVENT_DISPLAY_SLEEP` | `0` | Set to `1` to also block display sleep (`caffeinate -d`). |
-| `CPU_IDLE_THRESHOLD` | `5` | Release wakelock when CPU % stays below this. `0` = never release. |
-| `CPU_IDLE_DURATION` | `120` | Polls below threshold before releasing. At 5 s poll = 10 min. |
-| `NETWORK_KEEPALIVE` | `0` | **Set to `1` to keep Wi-Fi / hotspot alive with lid closed.** Sends a ping every `NETWORK_KEEPALIVE_INTERVAL` seconds. |
+| `EXTRA_PATTERNS` | `()` | Extra `pgrep -f` patterns to match additional processes. |
+| `NETWORK_KEEPALIVE` | `0` | **Set to `1` to keep Wi-Fi / hotspot alive.** Pings every `NETWORK_KEEPALIVE_INTERVAL` seconds. |
 | `NETWORK_KEEPALIVE_HOST` | `8.8.8.8` | Ping target. Use your router's LAN IP to avoid internet traffic. |
 | `NETWORK_KEEPALIVE_INTERVAL` | `30` | Seconds between keepalive pings. |
-| `NOTIFY_IMESSAGE` | `0` | Set to `1` to send iMessage alerts to your phone. |
-| `NOTIFY_TARGET` | `` | Phone number (`+15551234567`) or Apple ID email to message. |
-| `NOTIFY_BATTERY_PCT` | `20` | Battery % that triggers the low-battery alert. |
+| `BATTERY_LID_CLOSED` | `0` | **Set to `1` to keep running with the lid closed on battery** (via `pmset disablesleep`). Needs one-time `setup-lid-closed`. |
+| `BATTERY_FLOOR_PCT` | `15` | On battery, release the lid-closed override at/below this % so it can't drain to empty. `0` = no floor. |
+| `LID_CLOSED_MAX_HOURS` | `8` | On battery, release the override after this many hours of continuous hold (backstop). `0` = no cap. |
+| `HEARTBEAT_WINDOW_SECS` | `180` | A heartbeat newer than this counts as "working" (advanced). |
+| `CPU_DELTA_EPSILON_SECS` | `1` | Subtree must gain > this many CPU-seconds/poll to count as active (advanced). |
 
 ### Keeping your hotspot connected with the lid closed
 
@@ -64,44 +85,75 @@ send no traffic (typically after 20–30 s). With the lid closed on AC power the
 Mac stays awake via `caffeinate -s` but sends no packets, so the hotspot drops
 it. The keepalive pings prevent that.
 
-**Battery note:** `caffeinate -s` only blocks sleep on AC power. On battery,
-macOS forces sleep when the lid closes regardless. Plug in for lid-closed runs.
+**Battery note:** `caffeinate -s` only blocks sleep on AC power. To keep running
+with the lid closed **on battery**, enable lid-closed mode (below).
 
-### Phone alerts when you unplug
+### Keeping agents alive with the lid closed on battery
 
-Enable iMessage notifications so your phone warns you the moment you unplug:
+By default macOS forces sleep the moment you close the lid on battery — power
+assertions like `caffeinate` stop the idle timer but can't override the
+hardware lid-close trigger. The kernel `SleepDisabled` flag (`pmset
+disablesleep`) can. This mode flips it on while agents are active and off the
+moment they finish.
 
-```bash
-# in ~/.config/keep-awake-agents/config
-NOTIFY_IMESSAGE=1
-NOTIFY_TARGET=+15551234567   # your own phone number
-NOTIFY_BATTERY_PCT=20        # also alert at this battery %
-```
-
-You'll get two types of messages:
-- **Unplugged alert** — fires the moment you pull the charger while keepalive is on. Tells you the current battery %.
-- **Low battery alert** — fires when battery drops below `NOTIFY_BATTERY_PCT` while on battery.
-
-Both reset when you plug back in, so you only get one of each per AC cycle. Requires the Mac's Messages app to be signed in to iMessage.
-
-After editing, restart the daemon:
+One-time setup (installs a narrow sudoers rule so the daemon can toggle it
+without a password — it grants *only* `pmset disablesleep`, nothing else):
 
 ```bash
-launchctl kickstart -k gui/$(id -u)/com.keepawake.agents
+keep-awake-ctl.sh setup-lid-closed
 ```
+
+or click **Lid closed on battery → Turn on (one-time setup)…** in the menu bar.
+Then it's automatic: while agents run, the Mac stays awake with the lid shut on
+battery; it's released when they go idle, when paused, below `BATTERY_FLOOR_PCT`,
+after `LID_CLOSED_MAX_HOURS` of continuous hold, and on exit. Undo with
+`sudo rm /etc/sudoers.d/keep-awake-agents`.
+
+**On a phone hotspot?** Also turn on `NETWORK_KEEPALIVE` (above). Lid-closed mode
+keeps the *Mac* awake so the Wi-Fi radio stays up; the keepalive ping stops the
+*hotspot* from dropping you as an idle client. Together: close the lid at a café
+and your agents keep running over the hotspot.
+
+> ⚠️ **Heat & drain.** Lid closed on battery means no airflow and no charging.
+> The Mac can get hot in a bag and will drain until the floor cuts in. Use it
+> for active runs you'll come back to, not indefinite storage.
 
 ## How it works
 
-A bash loop polls every `POLL_INTERVAL` seconds. If it finds a process
-matching any of:
+A bash loop polls every `POLL_INTERVAL` seconds for Claude Code / Codex
+processes (plus any `EXTRA_PATTERNS`). While one is running and **working**, it
+holds `caffeinate -i -s` (and, per mode, the keepalive ping and the lid-closed
+override). When the agents go idle or exit, it releases everything so the Mac
+can sleep.
 
-- `node …/@anthropic-ai/claude-code/…/cli.js` (Claude Code), or
-- `…/Codex.app/…/codex` (Codex desktop), or
-- a binary named `codex` (Codex CLI), or
-- any user-defined `EXTRA_PATTERNS`,
+**What counts as "working" — not CPU%.** `ps %cpu` is a lifetime average, and
+agents sit near 0% CPU while waiting on the model, which is exactly when you
+don't want to sleep. Instead the daemon tracks, each poll:
 
-…it spawns `caffeinate -i -s` to block idle + system sleep. When no matching
-processes remain, it kills `caffeinate`. That's it.
+1. **Subtree CPU-time** — cumulative `cputime` across the agent process *and its
+   descendants* (subagents, MCP servers, bash/build jobs). Any forward movement
+   = real work.
+2. **A heartbeat** — an optional Claude Code hook touches a file on every tool
+   call / prompt, so even a long zero-CPU wait on the model counts as working.
+
+It's called idle only after `AGENT_IDLE_MINUTES` with neither signal.
+
+### Activity heartbeat (optional, recommended)
+
+The heartbeat lets the daemon tell "working" from "you walked away" precisely, so
+the idle window can stay short (saves battery) without ever sleeping mid-task.
+The installer offers to add it. To wire it manually, run
+`~/bin/keep-awake-heartbeat.sh` from a `PostToolUse` and `UserPromptSubmit` hook
+in `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "~/bin/keep-awake-heartbeat.sh" }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "~/bin/keep-awake-heartbeat.sh" }] }]
+  }
+}
+```
 
 State + audit log live at:
 
@@ -122,8 +174,8 @@ State + audit log live at:
 ## Caveats
 
 - `caffeinate -s` keeps the Mac awake with the lid closed **only on AC power**.
-  Apple enforces battery clamshell sleep at the kernel level. Plug in for long
-  overnight runs.
+  For battery, enable [lid-closed mode](#keeping-agents-alive-with-the-lid-closed-on-battery)
+  (`BATTERY_LID_CLOSED=1`), which uses `pmset disablesleep`. Mind the heat/drain.
 - **Hotspot / Wi-Fi drops?** See the [Keeping your hotspot connected](#keeping-your-hotspot-connected-with-the-lid-closed) section above. Enable `NETWORK_KEEPALIVE=1`.
 - The matcher is intentionally narrow. If your agents run under unusual
   wrappers, add a pattern in `EXTRA_PATTERNS` rather than editing the daemon.

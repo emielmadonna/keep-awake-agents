@@ -17,21 +17,31 @@ EXTRA_PATTERNS=()
 # Default 0 = screen still sleeps / lid still dims, but the system stays awake.
 PREVENT_DISPLAY_SLEEP=0
 
-# CPU-idle threshold (percent). When the combined CPU% of all matched processes
-# stays below this value for CPU_IDLE_DURATION consecutive polls, the wakelock
-# is released and the Mac can sleep — even though the agent processes are still
-# running. Set to 0 to disable (always keep awake while processes are running).
-#
-# NOTE: keep this low-but-nonzero AND keep CPU_IDLE_DURATION large. Claude/Codex
-# routinely show near-0% CPU while waiting for an API response; if the duration
-# is too short, caffeinate exits during a normal LLM round-trip and the Mac (or
-# hotspot connection) drops.
-CPU_IDLE_THRESHOLD=5
+# ── Mode ──────────────────────────────────────────────────────────────────────
+# A convenience that bundles the flags below. Set it from the menu bar (or
+# `keep-awake-ctl.sh set-mode desk|cafe|lockedin`). The daemon is flag-driven —
+# this line is just a label.
+#   desk     — plugged in: stay awake while working, sleep when idle (default)
+#   cafe     — lid closed on battery + hotspot kept alive (needs setup-lid-closed)
+#   lockedin — never sleep while an agent is running
+MODE=desk
 
-# Number of consecutive polls below CPU_IDLE_THRESHOLD before going idle.
-# At POLL_INTERVAL=5: 120 polls = 10 minutes of sustained inactivity.
-# Keep this large enough to outlast any LLM API round-trip (often 30–120 s).
-CPU_IDLE_DURATION=120
+# ── Activity detection ────────────────────────────────────────────────────────
+# Keep the Mac awake while agents are *working*, and let it sleep once they're
+# genuinely idle. "Working" = the agent process subtree burned CPU-time since the
+# last poll, OR a fresh heartbeat exists (see keep-awake-heartbeat.sh). Far more
+# reliable than CPU% — Claude/Codex sit near 0% CPU while waiting on the model,
+# which is exactly when you do NOT want to sleep.
+#
+# AGENT_IDLE_MINUTES — sleep after this many minutes with no activity. 0 = never
+#   idle-sleep while an agent is running. Default 5.
+AGENT_IDLE_MINUTES=5
+# A heartbeat newer than this many seconds counts as "working" (covers long,
+# zero-CPU waits on the model API).
+HEARTBEAT_WINDOW_SECS=180
+# The agent subtree must gain more than this many CPU-seconds per poll to count
+# as active. 1 ignores idle jitter.
+CPU_DELTA_EPSILON_SECS=1
 
 # ── Network keepalive ────────────────────────────────────────────────────────
 # When NETWORK_KEEPALIVE=1, a background ping runs every NETWORK_KEEPALIVE_INTERVAL
@@ -50,17 +60,27 @@ NETWORK_KEEPALIVE=0
 NETWORK_KEEPALIVE_HOST=8.8.8.8
 NETWORK_KEEPALIVE_INTERVAL=30
 
-# ── iMessage notifications ───────────────────────────────────────────────────
-# When NOTIFY_IMESSAGE=1, the daemon sends an iMessage to NOTIFY_TARGET when:
-#   1. You unplug while keepalive is active (lid-close will now drop the hotspot)
-#   2. Battery drops below NOTIFY_BATTERY_PCT% while on battery
+# ── Keep awake with the lid closed (incl. on battery) ────────────────────────
+# macOS forces sleep when you close the lid on battery, which kills running
+# agents. Set BATTERY_LID_CLOSED=1 to override that: while agents are active the
+# daemon runs `pmset disablesleep 1` (the kernel lid-close override) so the Mac
+# keeps running with the lid shut — on battery or AC. Released automatically
+# when agents go idle, when paused, below the battery floor, and on exit.
 #
-# NOTIFY_TARGET — your phone number (+15551234567) or Apple ID email.
-#   The Mac's Messages app must be signed in to iMessage.
-#   Set this to your own number so alerts go to your iPhone.
+# REQUIRES one-time sudo setup so the daemon can toggle it without a password:
+#   keep-awake-ctl.sh setup-lid-closed      (or the menu-bar "Turn on…" item)
 #
-# NOTIFY_BATTERY_PCT — battery % that triggers the low-battery alert.
-#   Default 20. Only fires once per AC cycle (resets when you plug back in).
-NOTIFY_IMESSAGE=0
-NOTIFY_TARGET=
-NOTIFY_BATTERY_PCT=20
+# ⚠️  Lid closed on battery = no airflow + silent drain. The Mac can get hot in
+#     a bag. Meant for active runs you'll return to, not long-term storage.
+BATTERY_LID_CLOSED=0
+
+# BATTERY_FLOOR_PCT — safety floor. On battery, once charge hits this % the
+# override is released so the Mac can sleep instead of draining to empty.
+# Default 15. Set 0 to disable the floor (not recommended on battery).
+BATTERY_FLOOR_PCT=15
+
+# LID_CLOSED_MAX_HOURS — backstop. On battery, release the override after this
+# many hours of continuous hold even if agents are still busy, so a jammed
+# daemon can't keep the Mac awake indefinitely. Re-arms when agents go idle or
+# you plug in. Default 8. Set 0 for no cap.
+LID_CLOSED_MAX_HOURS=8

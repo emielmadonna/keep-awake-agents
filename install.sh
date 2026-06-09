@@ -13,6 +13,7 @@ LABEL="com.keepawake.agents"
 PLIST_DST="$HOME/Library/LaunchAgents/${LABEL}.plist"
 BIN_DST="$HOME/bin/keep-awake-agents.sh"
 CTL_DST="$HOME/bin/keep-awake-ctl.sh"
+HEARTBEAT_DST="$HOME/bin/keep-awake-heartbeat.sh"
 PLUGIN_DST="$HOME/Library/Application Support/SwiftBar/Plugins/keep-awake.5s.sh"
 STATE_DIR="$HOME/Library/Application Support/keep-awake"
 CONFIG_DIR="$HOME/.config/keep-awake-agents"
@@ -42,11 +43,13 @@ else
 fi
 
 # 2. Copy daemon + control helper.
-cp "$REPO_DIR/bin/keep-awake-agents.sh" "$BIN_DST"
-cp "$REPO_DIR/bin/keep-awake-ctl.sh"    "$CTL_DST"
-chmod +x "$BIN_DST" "$CTL_DST"
+cp "$REPO_DIR/bin/keep-awake-agents.sh"    "$BIN_DST"
+cp "$REPO_DIR/bin/keep-awake-ctl.sh"       "$CTL_DST"
+cp "$REPO_DIR/bin/keep-awake-heartbeat.sh" "$HEARTBEAT_DST"
+chmod +x "$BIN_DST" "$CTL_DST" "$HEARTBEAT_DST"
 say "  daemon  → $BIN_DST"
 say "  ctl     → $CTL_DST"
+say "  heartbeat → $HEARTBEAT_DST"
 
 # 3. Render and install LaunchAgent.
 sed "s|__HOME__|$HOME|g" "$REPO_DIR/launchagent/${LABEL}.plist" > "$PLIST_DST"
@@ -99,6 +102,37 @@ if [[ -d "$SWIFTBAR_APP" ]]; then
   # Add SwiftBar to Login Items so it restarts automatically after a reboot.
   osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/SwiftBar.app", hidden:false}' 2>/dev/null || true
   say "  SwiftBar added to Login Items (auto-starts on login)"
+fi
+
+# 8. Offer to register the activity heartbeat hook in Claude Code. This lets the
+# daemon tell "working" from "walked away" even when local CPU is ~0 (waiting on
+# the model). Optional — the CPU-time signal works without it.
+SETTINGS="$HOME/.claude/settings.json"
+echo ""
+read -r -p "Add the Claude Code activity hook (recommended)? [Y/n] " hk
+hk=${hk:-Y}
+if [[ "$hk" =~ ^[Yy]$ ]]; then
+  if command -v jq >/dev/null 2>&1; then
+    mkdir -p "$HOME/.claude"
+    [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
+    tmp=$(mktemp)
+    if jq --arg cmd "$HEARTBEAT_DST" '
+          .hooks //= {} | .hooks.PostToolUse //= [] | .hooks.UserPromptSubmit //= []
+          | (if ([.hooks.PostToolUse[]?.hooks[]?.command] | index($cmd)) then .
+             else .hooks.PostToolUse += [{matcher:"*", hooks:[{type:"command", command:$cmd}]}] end)
+          | (if ([.hooks.UserPromptSubmit[]?.hooks[]?.command] | index($cmd)) then .
+             else .hooks.UserPromptSubmit += [{hooks:[{type:"command", command:$cmd}]}] end)
+        ' "$SETTINGS" > "$tmp" 2>/dev/null; then
+      mv "$tmp" "$SETTINGS"
+      say "  hook    → added to $SETTINGS (PostToolUse + UserPromptSubmit)"
+    else
+      rm -f "$tmp"
+      warn "Couldn't edit $SETTINGS automatically — add the hook manually (see README)."
+    fi
+  else
+    warn "jq not found — to enable the heartbeat, add a PostToolUse + UserPromptSubmit"
+    warn "hook in $SETTINGS that runs: $HEARTBEAT_DST  (see README)"
+  fi
 fi
 
 echo ""

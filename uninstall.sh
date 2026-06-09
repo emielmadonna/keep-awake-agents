@@ -8,6 +8,7 @@ LABEL="com.keepawake.agents"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
 BIN="$HOME/bin/keep-awake-agents.sh"
 CTL="$HOME/bin/keep-awake-ctl.sh"
+HEARTBEAT="$HOME/bin/keep-awake-heartbeat.sh"
 PLUGIN="$HOME/Library/Application Support/SwiftBar/Plugins/keep-awake.5s.sh"
 STATE_DIR="$HOME/Library/Application Support/keep-awake"
 
@@ -17,8 +18,29 @@ say "Stopping daemon"
 launchctl unload "$PLIST" 2>/dev/null || true
 
 say "Removing files"
-rm -f "$PLIST" "$BIN" "$CTL" "$PLUGIN"
+rm -f "$PLIST" "$BIN" "$CTL" "$HEARTBEAT" "$PLUGIN"
 rm -rf "$STATE_DIR"
+
+# Strip the Claude Code activity hook (if present and jq is available).
+SETTINGS="$HOME/.claude/settings.json"
+if [ -f "$SETTINGS" ] && command -v jq >/dev/null 2>&1; then
+  tmp=$(mktemp)
+  if jq '
+        if .hooks then
+          (if .hooks.PostToolUse then .hooks.PostToolUse = [.hooks.PostToolUse[] | select(([.hooks[]?.command] | any(test("keep-awake-heartbeat"))) | not)] else . end)
+          | (if .hooks.UserPromptSubmit then .hooks.UserPromptSubmit = [.hooks.UserPromptSubmit[] | select(([.hooks[]?.command] | any(test("keep-awake-heartbeat"))) | not)] else . end)
+        else . end
+      ' "$SETTINGS" > "$tmp" 2>/dev/null; then
+    mv "$tmp" "$SETTINGS"; say "Removed Claude Code activity hook"
+  else rm -f "$tmp"; fi
+fi
+
+# Remove the lid-closed sudoers rule (if set up) and make sure sleep is back on.
+if [ -f "/etc/sudoers.d/keep-awake-agents" ]; then
+  say "Removing lid-closed sudoers rule (needs sudo)"
+  sudo /usr/bin/pmset -a disablesleep 0 2>/dev/null || true
+  sudo rm -f "/etc/sudoers.d/keep-awake-agents" 2>/dev/null || true
+fi
 
 read -r -p "Also delete config at ~/.config/keep-awake-agents? [y/N] " reply_cfg
 if [[ "$reply_cfg" =~ ^[Yy]$ ]]; then
